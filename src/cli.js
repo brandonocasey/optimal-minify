@@ -91,16 +91,14 @@ const cli = function(code) {
     }
     options.runs = [];
     options.minifiers.forEach(function(minifier) {
-      options.compressors.forEach(function(compressor) {
-        let i = options.passes;
+      let i = options.passes;
 
-        while (i--) {
-          options.runs.push({minifier, compressor, options: {
-            output: shared.output,
-            compress: {passes: i + 1}
-          }});
-        }
-      });
+      while (i--) {
+        options.runs.push({minifier, compressors: options.compressors, options: {
+          output: shared.output,
+          compress: {passes: i + 1}
+        }});
+      }
     });
   }
 

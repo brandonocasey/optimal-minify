@@ -1,7 +1,6 @@
-const compressors = require('./compressors.js');
+const _compressors = require('./compressors.js');
 const minifiers = require('./minifiers');
-const DEFAULTS = require('./defaults');
-const cloneDeep = require('lodash.clonedeep')
+const cloneDeep = require('lodash.clonedeep');
 const {performance} = require('perf_hooks');
 
 /**
@@ -40,26 +39,38 @@ const {performance} = require('perf_hooks');
  * @return {Promise}
  *         A single promise that resolves to a minification result
  */
-const doRun = function(_code, {minifier, compressor, options = {}}) {
+const doRun = function(_code, {minifier, compressors, options = {}}) {
   return Promise.resolve().then(function() {
-    const startTime = performance.now();
-    // clone options
+    if (!minifier || Object.keys(minifiers).indexOf(minifier) === -1) {
+      return Promise.reject('is missing or using an invalid minifier key!\n' +
+        `Valid Minifiers are: ${Object.keys(minifiers).join(', ')}`);
+    }
+
+    const minStart = performance.now();
     const {code, error} = minifiers[minifier](_code, cloneDeep(options));
+    const minTime = performance.now() - minStart;
 
     if (error) {
       return Promise.reject(`${minifier} error\n` + error);
     }
+    const results = [];
 
-    const bytes = compressors[compressor](code);
+    compressors.forEach(function(compressor) {
+      const compStart = performance.now();
+      const bytes = _compressors[compressor](code);
+      const compTime = (performance.now() - compStart);
 
-    return Promise.resolve({
-      code,
-      bytes,
-      time: ((performance.now() - startTime).toFixed(0) / 1000),
-      compressor,
-      minifier,
-      options
+      results.push({
+        code,
+        bytes,
+        time: ((compTime + minTime).toFixed(0) / 1000),
+        compressor,
+        minifier,
+        options
+      });
     });
+
+    return Promise.resolve(results);
   });
 };
 
@@ -77,8 +88,8 @@ const doRun = function(_code, {minifier, compressor, options = {}}) {
  * @param {string} options.runs[].minifier
  *        which minifier to use
  *
- * @param {string} options.runs[].compressor
- *        which compressor to use
+ * @param {string} options.runs[].compressors
+ *        which compressors to use
  *
  * @param {string} options.runs[].options
  *        minifier options
@@ -110,20 +121,13 @@ const optimalMinify = function(options) {
     // validate and clone runs
 
     return Promise.all(options.runs.map(function(run, i) {
-      if (!run.minifier || Object.keys(minifiers).indexOf(run.minifier) === -1) {
-        return Promise.reject(`Run #${i} is missing or using an invalid minifier key!\n` +
-          `Valid Minifiers are: ${Object.keys(minifiers).join(', ')}`);
-      }
 
-      if (!run.compressor || Object.keys(compressors).indexOf(run.compressor) === -1) {
-        return Promise.reject(`Run #${i} is missing or using an invalid compressorkey!\n` +
-          `Valid Minifiers are: ${Object.keys(compressors).join(', ')}`);
-      }
-
-      return doRun(options.code, run);
+      return doRun(options.code, run).catch(function(e) {
+        return Promise.reject(`Run #${i} ${e}`);
+      });
     }));
   }).then((results) => {
-    return Promise.resolve(results.sort(function(a, b) {
+    return Promise.resolve(results.reduce((acc, v) => acc.concat(v), []).sort(function(a, b) {
       if (b.bytes > a.bytes || (b.bytes === a.bytes && b.time < a.time)) {
         return -1;
       } else if (b.bytes < a.bytes || (b.bytes === a.bytes && b.time > a.time)) {
