@@ -1,12 +1,9 @@
-// note minifier types (uglify, terser) will be added to this
-// as empty objects below
+const minifiers = require('./minifiers');
 const DEFAULTS = {
-  code: null,
-  gzipSize: {level: 9},
-  shared: {},
-  mode: 'optimal',
+  comments: 'some',
   passes: 2,
-  log: null
+  minifiers: Object.keys(minifiers),
+  compressors: ['gzip']
 };
 
 module.exports = DEFAULTS;

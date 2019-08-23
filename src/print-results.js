@@ -1,10 +1,10 @@
-const printResults = function(logFn, {results, minResult}) {
-  results.forEach(function(result) {
-    const {type, time, passes, gzipSize} = result;
-    const larrow = minResult === result ? '->' : '  ';
-    const rarrow = minResult === result ? '<-' : '';
+const printResults = function(logFn, results) {
+  results.forEach(function(result, i) {
+    const {minifier, time, bytes, compressor, options} = result;
+    const larrow = i === 0 ? '->' : '  ';
+    const rarrow = i === 0 ? '<-' : '';
 
-    logFn(`${larrow} ${type} ${passes} pass(es): ${gzipSize}b gz ${time}ms ${rarrow}`);
+    logFn(`${larrow} ${minifier}: ${bytes}b ${compressor} ${time}s ${JSON.stringify(options)} ${rarrow}`);
   });
 };
 

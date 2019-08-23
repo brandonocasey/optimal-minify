@@ -7,21 +7,25 @@ const optimalMinify = require('./index.js');
 const DEFAULTS = require('./defaults.js');
 const {version} = require('../package.json');
 const minifiers = require('./minifiers.js');
+const compressors = require('./compressors.js');
 const printResults = require('./print-results.js');
+const {performance} = require('perf_hooks');
 
 const showHelp = function() {
   console.log(`
   optimal-minify [file] --config <file>
   echo "some code" | optimal-minify --config <file>
 
-  -m, --mode    <mode>     Mode to run with: Default: optimal. Others: ${Object.keys(minifiers).join(', ')}
-  -p, --passes  <number>   Passes to try for minifiers: Default: 2
-  -c, --config  <file>     Config file to use for more advanced minify options
-  -o, --output  <file>     Write the best output to file instead of stdout. Pass 'false', to disable
-  -v, --version            Print version and exit
-  -V, --verbose            log verbose information to stderr
-  -h, --help               Print help and exit
-      --comments <string>  comments value from uglify/terser
+  -m, --minifiers   <min,min>     Minifiers to use. Default: ${DEFAULTS.minifiers.join(', ')}. Valid: ${Object.keys(minifiers).join(', ')}
+  -c, --compressors <comp,comp>   Compressors to use. Default ${DEFAULTS.compressors.join(', ')}. Valid: ${Object.keys(compressors).join(', ')}
+  -p, --passes      <number>      Passes to try for minifiers: Default: ${DEFAULTS.passes}
+  -o, --output      <file>        Write the best output to file instead of stdout.
+      --no-output                 Do not print output to stdout or write to file. implies verbose
+  -v, --version                   Print version and exit
+  -V, --verbose                   log verbose information to stderr
+  -h, --help                      Print help and exit
+      --comments <string>         Comments value from uglify/terser config. Deaults to ${DEFAULTS.comments}
+      --config                    pass a json config to load runs from, instead of cli options.
 
 `);
 };
@@ -32,10 +36,20 @@ const parseArgs = function(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
 
-    if ((/^--mode|-m$/).test(arg)) {
+    if ((/^--minifiers|-m$/).test(arg)) {
       i++;
-      options.mode = args[i];
+      options.minifiers = []
+        .concat(options.minifiers || [])
+        .concat(args[i].split(','));
+    } else if ((/^--compressors|-c$/).test(arg)) {
+      i++;
+      options.compressors = []
+        .concat(options.compressors || [])
+        .concat(args[i].split(','));
     } else if ((/^--verbose|-V$/).test(arg)) {
+      options.verbose = true;
+    } else if ((/^--no-output$/).test(arg)) {
+      options.output = false;
       options.verbose = true;
     } else if ((/^--version|-v$/).test(arg)) {
       console.log(`optimal-minify v${version}`);
@@ -45,7 +59,7 @@ const parseArgs = function(args) {
       process.exit(0);
     } else if ((/^--passes|-p$/).test(arg)) {
       i++;
-      options.mode = args[i];
+      options.passes = Number(args[i]);
     } else if ((/^--config|-c$/).test(arg)) {
       i++;
       options.config = args[i];
@@ -64,26 +78,33 @@ const parseArgs = function(args) {
 };
 
 const cli = function(code) {
-  let options = Object.assign(DEFAULTS, parseArgs(process.argv));
+  const options = Object.assign(DEFAULTS, parseArgs(process.argv));
 
   if (options.config) {
-    const config = JSON.parse(fs.readFileSync(options.config, 'utf8'));
+    options.runs = JSON.parse(fs.readFileSync(options.config, 'utf8'));
+  } else {
+    const shared = {};
 
-    options = Object.assign(options, config, {
-      shared: Object.assign(options.shared || {}, config.shared || {}),
-      uglify: Object.assign(options.uglify || {}, config.uglify || {}),
-      terser: Object.assign(options.terser || {}, config.terser || {}),
-      gzipSize: Object.assign(options.gzipSize || {}, config.gzipSize || {})
+    if (options.comments) {
+      shared.output = {comments: options.comments};
+      delete options.comments;
+    }
+    options.runs = [];
+    options.minifiers.forEach(function(minifier) {
+      options.compressors.forEach(function(compressor) {
+        let i = options.passes;
+
+        while (i--) {
+          options.runs.push({minifier, compressor, options: {
+            output: shared.output,
+            compress: {passes: i + 1}
+          }});
+        }
+      });
     });
-    delete options.config;
   }
 
-  if (options.comments) {
-    options.shared.output = {comments: options.comments};
-    delete options.comments;
-  }
-
-  let output;
+  let output = true;
   let verbose = () => {};
 
   if (options.verbose) {
@@ -91,7 +112,7 @@ const cli = function(code) {
     delete options.verbose;
   }
 
-  if (options.output) {
+  if (typeof options.output !== 'undefined') {
     output = options.output;
     delete options.output;
   }
@@ -103,16 +124,19 @@ const cli = function(code) {
     delete options.file;
   }
 
-  return optimalMinify(options).then(function({results, minResult}) {
-    if (output) {
-      if (output !== 'false') {
-        fs.writeFileSync(path.resolve(process.cwd(), output), minResult.code);
-      }
-    } else {
-      console.log(minResult.code);
+  const startTime = performance.now();
+
+  return optimalMinify(options).then(function(results) {
+    if (typeof output === 'string') {
+      fs.writeFileSync(path.resolve(process.cwd(), output), results[0].code);
+    } else if (output !== false) {
+      console.log(results[0].code);
     }
 
-    printResults(verbose, {results, minResult});
+    printResults(verbose, results);
+    const runTime = ((performance.now() - startTime).toFixed(0) / 1000);
+
+    verbose(`Finished in: ${runTime}s`);
 
     process.exit(0);
   }).catch(function(e) {
