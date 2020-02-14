@@ -1,10 +1,11 @@
 {
   "name": "optimal-minify",
   "version": "0.0.1",
-  "description": "Determine and use uglify or terser at runtime based on minification performance.",
+  "description": "Find out what minification method is best for your code at runtime and use it.",
   "main": "src/index.js",
   "bin": {
-    "optimal-minify": "src/cli.js"
+    "optimal-minify": "src/cli.js",
+    "optmin": "src/cli.js"
   },
   "scripts": {
     "lint": "vjsstandard",

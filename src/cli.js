@@ -25,8 +25,7 @@ const showHelp = function() {
   -V, --verbose                   log verbose information to stderr
   -h, --help                      Print help and exit
       --comments <string>         Comments value from uglify/terser config. Deaults to ${DEFAULTS.comments}
-      --config                    pass a json config to load runs from, instead of cli options.
-
+      --config                    pass a js/json config to load runs from, instead of cli options.
 `);
 };
 
@@ -80,28 +79,6 @@ const parseArgs = function(args) {
 const cli = function(code) {
   const options = Object.assign(DEFAULTS, parseArgs(process.argv));
 
-  if (options.config) {
-    options.runs = JSON.parse(fs.readFileSync(options.config, 'utf8'));
-  } else {
-    const shared = {};
-
-    if (options.comments) {
-      shared.output = {comments: options.comments};
-      delete options.comments;
-    }
-    options.runs = [];
-    options.minifiers.forEach(function(minifier) {
-      let i = options.passes;
-
-      while (i--) {
-        options.runs.push({minifier, compressors: options.compressors, options: {
-          output: shared.output,
-          compress: {passes: i + 1}
-        }});
-      }
-    });
-  }
-
   let output = true;
   let verbose = () => {};
 
@@ -120,6 +97,11 @@ const cli = function(code) {
   } else if (options.file) {
     options.code = fs.readFileSync(options.file, 'utf8');
     delete options.file;
+  }
+
+  if (!options.code) {
+    console.error('You must pass a file or pipe code to be minified!');
+    process.exit(1);
   }
 
   const startTime = performance.now();

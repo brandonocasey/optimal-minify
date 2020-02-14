@@ -2,6 +2,7 @@ const _compressors = require('./compressors.js');
 const minifiers = require('./minifiers');
 const cloneDeep = require('lodash.clonedeep');
 const {performance} = require('perf_hooks');
+const DEFAULTS = require('./defaults.js');
 
 /**
  * A Compression Result from doMinify.
@@ -33,13 +34,16 @@ const {performance} = require('perf_hooks');
  * @param {string} _code
  *        The code to minify
  *
+ * @param {string[]} compressors
+ *        A string array of compressors to use
+ *
  * @param {Object} run
  *        run options, see optimalMinify function
  *
  * @return {Promise}
  *         A single promise that resolves to a minification result
  */
-const doRun = function(_code, {minifier, compressors, options = {}}) {
+const doRun = function(_code, compressors, {minifier, options = {}}) {
   return Promise.resolve().then(function() {
     if (!minifier || Object.keys(minifiers).indexOf(minifier) === -1) {
       return Promise.reject('is missing or using an invalid minifier key!\n' +
@@ -56,6 +60,10 @@ const doRun = function(_code, {minifier, compressors, options = {}}) {
     const results = [];
 
     compressors.forEach(function(compressor) {
+      if (!compressor || Object.keys(_compressors).indexOf(compressor) === -1) {
+        return Promise.reject('is missing or using an invalid compressor key!\n' +
+          `Valid Compresssors are: ${Object.keys(_compressors).join(', ')}`);
+      }
       const compStart = performance.now();
       const bytes = _compressors[compressor](code);
       const compTime = (performance.now() - compStart);
@@ -75,6 +83,8 @@ const doRun = function(_code, {minifier, compressors, options = {}}) {
 };
 
 /**
+ * Run multiple minification tests based on `code` based on the
+ * `runs` given.
  *
  * @param {Object} options
  *        Options for optimalMinify
@@ -88,41 +98,76 @@ const doRun = function(_code, {minifier, compressors, options = {}}) {
  * @param {string} options.runs[].minifier
  *        which minifier to use
  *
- * @param {string} options.runs[].compressors
- *        which compressors to use
- *
  * @param {string} options.runs[].options
  *        minifier options
  *
- * @param {string} options
+ * @param {string} options.config
+ *        A config to load runs from, takes priority over run generation
  *
- * @param {string} [options.mode=optimal]
- *        How to run optimalMinify, can be optimal, uglify, or terser.
+ * @param {string[]} options.compressors
+ *        an array of compressors to use.
+ *
+ * @param {string[]} options.minifiers
+ *        an array of minifiers to use. will be ignored if runs or config is specified.
  *
  * @param {number} options.passes
- *        How many passes to try for each minifier.
+ *        number of passes to try an used. will be ignored if runs or config is specified.
  *
- * @returns {Promise}
+ * @param {string} options.comments
+ *        comments option to pass to minifiers. will be ignored if runs or config is specified.
+ *
+ * @return {Promise}
  *          A promise that resolves to a CompressionResult
- *          containing the `minResult` and all other `results`.
- *          {results: [...], minResult: {..}}`
+ *          containing sorted `results`. Where the index 0 result will be the best.
  *
  */
 const optimalMinify = function(options) {
   return Promise.resolve().then(function() {
+    options = Object.assign({}, DEFAULTS, options);
+
     if (!options.code) {
-      return Promise.reject('options.code must be passed to optimalMinify!');
+      return Promise.reject('code must be passed to optimalMinify!');
+    }
+
+    if (!Array.isArray(options.compressors) || !options.compressors.length) {
+      return Promise.reject('compressors must be passed to optimalMinify!');
     }
 
     if (!Array.isArray(options.runs) || !options.runs.length) {
-      return Promise.reject('options.runs must be an array with a least one entry!');
+      if (options.config) {
+        options.runs = require(options.config);
+      } else {
+        const shared = {};
+
+        if (options.comments) {
+          shared.output = {comments: options.comments};
+          delete options.comments;
+        }
+        options.runs = [];
+        options.minifiers.forEach(function(minifier) {
+          let i = options.passes;
+
+          while (i--) {
+            options.runs.push({minifier, options: {
+              output: shared.output,
+              compress: {passes: i + 1}
+            }});
+          }
+        });
+      }
+
+    }
+
+    if (!Array.isArray(options.runs) || !options.runs.length) {
+      return Promise.reject('Could not determine runs. Pass "runs" in as an array option, \n' +
+        'a combination of "minifiers", "compressors", "passes", and "comments"\n' +
+        'to generate runs, or a config file that contains runs');
     }
 
     // validate and clone runs
 
     return Promise.all(options.runs.map(function(run, i) {
-
-      return doRun(options.code, run).catch(function(e) {
+      return doRun(options.code, options.compressors, run).catch(function(e) {
         return Promise.reject(`Run #${i} ${e}`);
       });
     }));
