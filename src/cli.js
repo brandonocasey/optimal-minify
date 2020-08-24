@@ -77,7 +77,7 @@ const parseArgs = function(args) {
 };
 
 const cli = function(code) {
-  const options = Object.assign(DEFAULTS, parseArgs(process.argv));
+  const options = Object.assign(DEFAULTS, parseArgs(process.argv.slice(2)));
 
   let output = true;
   let verbose = () => {};
