@@ -44,14 +44,16 @@ const DEFAULTS = require('./defaults.js');
  *         A single promise that resolves to a minification result
  */
 const doRun = function(_code, compressors, {minifier, options = {}}) {
+  const minStart = performance.now();
+
   return Promise.resolve().then(function() {
     if (!minifier || Object.keys(minifiers).indexOf(minifier) === -1) {
       return Promise.reject('is missing or using an invalid minifier key!\n' +
         `Valid Minifiers are: ${Object.keys(minifiers).join(', ')}`);
     }
 
-    const minStart = performance.now();
-    const {code, error} = minifiers[minifier](_code, cloneDeep(options));
+    return Promise.resolve(minifiers[minifier](_code, cloneDeep(options)));
+  }).then(function({code, error}) {
     const minTime = performance.now() - minStart;
 
     if (error) {
@@ -165,7 +167,6 @@ const optimalMinify = function(options) {
     }
 
     // validate and clone runs
-
     return Promise.all(options.runs.map(function(run, i) {
       return doRun(options.code, options.compressors, run).catch(function(e) {
         return Promise.reject(`Run #${i} ${e}`);
